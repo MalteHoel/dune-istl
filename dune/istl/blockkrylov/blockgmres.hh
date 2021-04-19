@@ -16,7 +16,7 @@
 
 namespace Dune {
 
-
+#ifndef DOXYGEN
   namespace {
     // computes the givens rotation and applies it to m1 and m2
     // assumes that m2 is upper triangular
@@ -152,82 +152,91 @@ namespace Dune {
     }
     return GivensRotation<ParallelMatrixAlgebra<X,P>>({ts[0], ts[1], ts[2], ts[3]});
   }
+#endif
 
-  /** @addtogroup ISTL_Solvers
+  /** @addtogroup ISTL_Blockkrylov
       @{
   */
   /**
      \brief Implements the block GMRes method (BlockGMRes).
 
-     BlockGMRes solves the unsymmetric linear system Ax = b for multiple right-hand
-     sides using the block  method as described in cite PhD
-     Thesis
+     BlockGMRes solves the linear system Ax = b for multiple right-hand
+     sides using the block method.
 
-     \tparam X vector type
+     See
+     - Saad, Y. (2003). Iterative methods for sparse linear systems. Society for Industrial and Applied Mathematics. Section 6.12.
+     - Dreier, N. (2020). Hardware-Oriented Krylov Methods for High-Performance Computing. PhD Thesis. Chapter 5.
+
+     \tparam X domain vector type
+     \tparam X range vector type
+     \tparam P block size
+     \tparam RIGHT_PREC whether to use right or left preconditioning
   */
 
   // TODO: allow different range vector type
-  template<class X, size_t P = Simd::lanes<typename X::field_type>()>
-  class BlockGMRes : public IterativeSolver<X, X>
+  template<class X, class Y=X, size_t P = Simd::lanes<typename X::field_type>(), bool RIGHT_PREC=true>
+  class BlockGMRes : public IterativeSolver<X, Y>
   {
   public:
-    using typename IterativeSolver<X,X>::domain_type;
-    using typename IterativeSolver<X,X>::range_type;
-    using typename IterativeSolver<X,X>::field_type;
-    using typename IterativeSolver<X,X>::real_type;
-    using typename IterativeSolver<X,X>::scalar_real_type;
+    using typename IterativeSolver<X,Y>::domain_type;
+    using typename IterativeSolver<X,Y>::range_type;
+    using typename IterativeSolver<X,Y>::field_type;
+    using typename IterativeSolver<X,Y>::real_type;
+    using typename IterativeSolver<X,Y>::scalar_real_type;
+
+    using V = std::conditional_t<RIGHT_PREC, Y, X>; // Krylov space vector type
     using scalar_field_type=Simd::Scalar<field_type>;
     static constexpr size_t K = Simd::lanes<field_type>();
     typedef FieldMatrix<scalar_field_type, K, K> FieldMatrixBlock;
-    using Algebra = ParallelMatrixAlgebra<X, P>;
+    using Algebra = ParallelMatrixAlgebra<V, P>;
 
-    BlockGMRes(const std::shared_ptr<LinearOperator<X,X>>& op,
+    BlockGMRes(const std::shared_ptr<LinearOperator<X,Y>>& op,
                const std::shared_ptr<BlockInnerProduct<Algebra>>& sp,
-               const std::shared_ptr<Preconditioner<X,X>>& prec,
+               const std::shared_ptr<Preconditioner<X,Y>>& prec,
                const ParameterTree& config = {})
-      : IterativeSolver<X,X>(op,sp,prec, config)
+      : IterativeSolver<X,Y>(op,sp,prec, config)
       , _bip(sp)
       , _restart(config.get("restart", 20))
-      , _right_preconditioning(config.get("right_preconditioning", true))
       , _replace_breakdown(config.get("replace_breakdown", false))
     {}
 
-    BlockGMRes(std::shared_ptr<LinearOperator<X,X> > op,
-               std::shared_ptr<ScalarProduct<X>> sp,
-               std::shared_ptr<Preconditioner<X,X> > prec,
+    BlockGMRes(std::shared_ptr<LinearOperator<X,Y> > op,
+               std::shared_ptr<ScalarProduct<V>> sp,
+               std::shared_ptr<Preconditioner<X,Y> > prec,
                const ParameterTree& config)
       : BlockGMRes(op,
-                   std::dynamic_pointer_cast<BlockInnerProduct<Algebra>>(sp),
+                   dynamic_cast_or_throw<BlockInnerProduct<Algebra>>(sp),
                    prec,
                    config)
     {}
 
-    BlockGMRes(std::shared_ptr<LinearOperator<X,X>> op,
-            std::shared_ptr<Preconditioner<X,X>> prec,
+    BlockGMRes(std::shared_ptr<LinearOperator<X,Y>> op,
+            std::shared_ptr<Preconditioner<X,Y>> prec,
             const ParameterTree& config)
       : BlockGMRes(op,
-                   createBlockInnerProduct<X>(P, config.sub("inner_product")),
+                   createBlockInnerProduct<V>(P, config.sub("inner_product")),
                    prec,
                    config)
     {}
 
     // don't shadow four-argument version of apply defined in the base class
-    using IterativeSolver<X,X>::apply;
+    using IterativeSolver<X,Y>::apply;
 
-    virtual void apply (X& x, X& b, InverseOperatorResult& res)
+    virtual void apply (X& x, Y& b, InverseOperatorResult& res)
     {
       constexpr scalar_field_type mach_eps = std::numeric_limits<scalar_field_type>::epsilon();
       Iteration iteration(*this,res);
       _prec->pre(x,b);             // prepare preconditioner
 
-      X b0(b);
+      Y b0(b);
       _op->applyscaleadd(-1.0,x,b);
 
       // Krylov basis
-      std::vector<X> v(_restart+1, b);
-      if(_right_preconditioning){
-        v[0] = b;
+      std::vector<V> v(_restart+1);
+      if constexpr (RIGHT_PREC){
+        std::fill(v.begin(), v.end(), b);
       }else{
+        std::fill(v.begin(), v.end(), x);
         v[0] = 0.0;
         _prec->apply(v[0], b);
       }
@@ -248,14 +257,20 @@ namespace Dune {
       // Hessenberg matrix
       std::vector<std::vector<Algebra>> H(_restart);
 
-      X tmp(v[0]);
+      using TMP_type = std::conditional_t<RIGHT_PREC, X, Y>;
+      TMP_type tmp;
+      if constexpr(RIGHT_PREC){
+        tmp = x;
+      }else{
+        tmp = b;
+      }
 
       int j = 1;
-      while(j<= _maxit && res.converged != true){
+      while(j< _maxit && res.converged != true){
         size_t i = 0;
         for(; i < _restart && !res.converged; ++j){
           // block arnoldi
-          if(_right_preconditioning){
+          if constexpr(RIGHT_PREC){
             tmp = 0.0;
             _prec->apply(tmp, v[i]);
             _op->apply(tmp, v[i+1]);
@@ -300,12 +315,12 @@ namespace Dune {
 
           i++;
           real_type norm = s[i].column_norms();
-          if(iteration.step(j, norm))
+          if(iteration.step(j, norm) || j>=_maxit)
             break;
         }
         blockBackSubstitute(H,s,i);
 
-        // R^{-1}s to V to get the least-squares solution
+        // compute R^{-1}s*V to get the least-squares solution
         for(size_t k=0;k<i;++k){
           s[k].axpy(1.0, x, v[k]);
         }
@@ -313,21 +328,21 @@ namespace Dune {
           if(_verbose > 0)
             std::cout << "=== BlockGMRes::restart" << std::endl;
           b = b0;
-          if(!_right_preconditioning){
-            _op->applyscaleadd(-1.0, x, b);
-            v[0] = 0.0;
-            _prec->apply(v[0], b);
-          }else{
+          if constexpr (RIGHT_PREC){
             tmp = 0.0;
             _prec->apply(tmp, x);
             v[0] = b;
             _op->applyscaleadd(-1.0, tmp, v[0]);
+          }else{
+            _op->applyscaleadd(-1.0, x, b);
+            v[0] = 0.0;
+            _prec->apply(v[0], b);
           }
           Q.clear();
           s[0] = _bip->bnormalize(v[0], v[0]).get();
         }
       }
-      if(_right_preconditioning){
+      if constexpr (RIGHT_PREC){
         tmp = x;
         x = 0.0;
         _prec->apply(x, tmp);
@@ -362,7 +377,31 @@ namespace Dune {
     bool _replace_breakdown = false;
   };
   /** @} end documentation */
-  DUNE_REGISTER_ITERATIVE_SOLVER("blockgmres", blockKrylovSolverCreator<Dune::BlockGMRes>());
+  DUNE_REGISTER_ITERATIVE_SOLVER("blockgmres",
+                                 [](auto typeList,
+                                    const auto& linearOperator,
+                                    const auto& scalarProduct,
+                                    const auto& preconditioner,
+                                    const ParameterTree& config)
+                                 {
+                                   using Domain = typename Dune::TypeListElement<0, decltype(typeList)>::type;
+                                   using Range = typename Dune::TypeListElement<1, decltype(typeList)>::type;
+                                   constexpr size_t K = Simd::lanes<typename Domain::field_type>();
+                                   std::shared_ptr<InverseOperator<Domain, Range>> solver;
+                                   bool right_preconditioning = config.get("right_preconditioning", true);
+                                   Hybrid::switchCases(dividersOf<K>(),
+                                                       config.get<size_t>("p", K),
+                                                       [&](auto pp){
+                                                         if(right_preconditioning)
+                                                           solver = std::make_shared<BlockGMRes<Domain, Range, (pp.value), true>>(linearOperator, scalarProduct, preconditioner, config);
+                                                         else
+                                                           solver = std::make_shared<BlockGMRes<Domain, Range, (pp.value), false>>(linearOperator, scalarProduct, preconditioner, config);
+                                                       },
+                                                       [](auto...){
+                                                         DUNE_THROW(Exception, "Invalid parameter P: P must be a divider of the SIMD width");
+                                                       });
+                                   return solver;
+                                 };);
 }
 
 #endif
