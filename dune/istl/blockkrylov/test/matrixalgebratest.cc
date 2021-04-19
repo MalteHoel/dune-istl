@@ -65,7 +65,7 @@ using AlignedBlockVector = Dune::BlockVector<field_type, Dune::AlignedAllocator<
 int main(){
   TestSuite tsuite;
   Hybrid::forEach(std::tuple<LoopSIMD<double,8>,
-                  LoopSIMD<double,8,32>
+                  LoopSIMD<double,8>
 #if HAVE_VC
                   ,Vc::SimdArray<double,8>
                   ,LoopSIMD<Vc::Vector<double>, 8/Simd::lanes<Vc::Vector<double>>()>

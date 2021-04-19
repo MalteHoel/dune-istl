@@ -13,7 +13,6 @@
 #include <dune/common/filledarray.hh>
 #include <dune/common/parallel/mpidata.hh>
 #include <dune/common/exceptions.hh>
-#include <dune/common/transpose.hh>
 
 #include "blas.hh"
 
@@ -28,9 +27,9 @@ namespace Dune {
       return alpha*x + y;
     }
 
-    template<class T, size_t S, size_t A>
-    LoopSIMD<T,S,A> fma(Simd::Scalar<T> alpha, const LoopSIMD<T,S,A>& x, const LoopSIMD<T,S,A>& y){
-      LoopSIMD<T,S,A> out;
+    template<class T, size_t S>
+    LoopSIMD<T,S> fma(Simd::Scalar<T> alpha, const LoopSIMD<T,S>& x, const LoopSIMD<T,S>& y){
+      LoopSIMD<T,S> out;
       for(size_t i=0; i<S;++i){
         out[i] = fma(alpha, x[i], y[i]);
       }
@@ -64,7 +63,7 @@ namespace Dune {
     constexpr size_t LOOPSIMD_TILEROWS = 6;
 
     template<class T> struct isLoopSIMD : std::false_type {};
-    template<class T, size_t S, size_t A> struct isLoopSIMD<LoopSIMD<T,S,A>> : std::true_type {};
+    template<class T, size_t S> struct isLoopSIMD<LoopSIMD<T,S>> : std::true_type {};
 
 
     template<class LS, size_t P>

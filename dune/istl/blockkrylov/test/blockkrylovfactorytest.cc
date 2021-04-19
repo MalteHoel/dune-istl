@@ -8,6 +8,7 @@
 #include <dune/common/parametertree.hh>
 #include <dune/common/parametertreeparser.hh>
 
+#include <dune/istl/schwarz.hh>
 #include <dune/istl/solverfactory.hh>
 #include <dune/istl/owneroverlapcopy.hh>
 #include <dune/istl/blockkrylov/blockcg.hh>
@@ -22,7 +23,7 @@ using namespace Dune;
 const int BS=1;
 typedef FieldMatrix<double,BS,BS> MatrixBlock;
 typedef BCRSMatrix<MatrixBlock> BCRSMat;
-typedef LoopSIMD<double, 16, 32> SIMD;
+typedef LoopSIMD<double, 16> SIMD;
 typedef FieldVector<SIMD,BS> VectorBlock;
 typedef BlockVector<VectorBlock> BVector;
 #if HAVE_MPI
@@ -74,7 +75,7 @@ int main(int argc, char** argv)
 
   N = ptree.get("N", 50);
 
-  Dune::initSolverFactories<Operator>();
+  Dune::initSolverFactories<BCRSMat,BVector,BVector>();
 #if HAVE_MPI
   Comm comm(MPI_COMM_WORLD);
   int n;

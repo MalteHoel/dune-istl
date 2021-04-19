@@ -5,6 +5,7 @@
 #include <dune/common/simd/loop.hh>
 #include <dune/common/test/testsuite.hh>
 
+#include <dune/istl/preconditioners.hh>
 #include <dune/istl/blockkrylov/blockbicgstab.hh>
 #include <dune/istl/test/laplacian.hh>
 
@@ -13,7 +14,7 @@ using namespace Dune;
 const int BS=1;
 typedef FieldMatrix<double,BS,BS> MatrixBlock;
 typedef BCRSMatrix<MatrixBlock> BCRSMat;
-typedef LoopSIMD<double, 16, 32> SIMD;
+typedef LoopSIMD<double, 16> SIMD;
 typedef FieldVector<SIMD,BS> VectorBlock;
 typedef BlockVector<VectorBlock> BVector;
 typedef MatrixAdapter<BCRSMat,BVector,BVector> Operator;
@@ -43,7 +44,7 @@ TestSuite test(){
   fop->applyscaleadd(-1.0, x, b0);
   x = 0.0;
   prec->apply(x, b0);
-  tsuite.check(Simd::allTrue(100 * x.two_norm() > config.get<double>("reduction")*def0), "convergence test failed!");
+  tsuite.check(Simd::allTrue(100.0 * x.two_norm() > config.get<double>("reduction")*def0), "convergence test failed!");
   return tsuite;
 }
 

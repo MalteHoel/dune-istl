@@ -5,6 +5,7 @@
 #include <dune/common/parametertree.hh>
 #include <dune/common/parametertreeparser.hh>
 
+#include <dune/istl/preconditioners.hh>
 #include <dune/istl/matrixmarket.hh>
 #include <dune/istl/blockkrylov/blockcg.hh>
 #include <dune/istl/blockkrylov/blockgmres.hh>
@@ -15,7 +16,7 @@
 
 using namespace Dune;
 
-using SIMD = LoopSIMD<double, 8, 32>;
+using SIMD = LoopSIMD<double, 8>;
 using Vector = BlockVector<FieldVector<SIMD, 1>>;
 using MatrixBlock = FieldMatrix<double, 1, 1>;
 using Mat = BCRSMatrix<MatrixBlock>;
@@ -75,7 +76,7 @@ int main(int argc, char** argv){
   fillRandom(b, true);
 
   std::shared_ptr<Operator> op = std::make_shared<Operator>(mat);
-  initSolverFactories<Operator>();
+  initSolverFactories<Mat,Vector,Vector>();
 
   for(std::string subkey : config.getSubKeys()){
     test(op, b, config.sub(subkey));
