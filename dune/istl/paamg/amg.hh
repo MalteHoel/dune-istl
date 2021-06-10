@@ -581,14 +581,14 @@ namespace Dune
               // in order to ensure that we fulfill the alignment requirements
               solver_.reset(new BiCGSTABSolver<X>(const_cast<M&>(matrices_->matrices().coarsest().getRedistributed()),
                                                   *scalarProduct_,
-                                                  *coarseSmoother_, 1E-2, 1000, 0));
+                                                  *coarseSmoother_, 1E-14, 1000, 0));
             else
               solver_.reset();
           }else
           {
               solver_.reset(new BiCGSTABSolver<X>(const_cast<M&>(*matrices_->matrices().coarsest()),
                   *scalarProduct_,
-                  *coarseSmoother_, 1E-2, 1000, 0));
+                  *coarseSmoother_, 1E-14, 1000, 0));
             // // we have to allocate these types using the rebound allocator
             // // in order to ensure that we fulfill the alignment requirements
             // using Alloc = typename std::allocator_traits<A>::template rebind_alloc<BiCGSTABSolver<X>>;
