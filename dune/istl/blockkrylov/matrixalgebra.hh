@@ -16,6 +16,9 @@
 
 #include "blas.hh"
 
+// we want to use the LoopSIMD type, so we give the blas implementations a lower priority
+#define DUNE_BLOCKKRYLOV_BLAS_PRIORITY 5
+
 namespace Dune {
 
 #ifndef DOXYGEN
